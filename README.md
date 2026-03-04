@@ -39,12 +39,15 @@ flowchart TB
     IGW["Internet Gateway (IGW)"]:::gateway
 
     subgraph Public_Subnets["Public Subnets (one per AZ)"]
-      Bastion["Bastion (Amazon Linux 2023)\n- Public IP\n- SSH:22 (allowlisted)\n- awscli + kubectl installed"]:::infra
+      Bastion["Bastion - Amazon Linux 2023
+      Public IP, SSH port 22
+      awscli + kubectl installed"]:::infra
     end
 
     subgraph Private_Subnets["Private Subnets (one per AZ)"]
       subgraph EKS_CP["EKS Control Plane (Private API)"]
-        API["Private EKS API Endpoint\n(IRSA enabled, control-plane logs)"]:::cp
+        API["Private EKS API Endpoint
+        IRSA enabled, control-plane logs"]:::cp
       end
 
       N1["Worker Node (AZ-1)"]:::node
@@ -61,11 +64,11 @@ flowchart TB
   end
 
   %% Flows
-  Internet((Internet)):::gateway -->|SSH :22 (allowlisted)| IGW
+  Internet((Internet)):::gateway -->|"SSH port 22 - allowlisted"| IGW
   IGW --> Bastion
 
   %% Bastion accesses private EKS API inside VPC
-  Bastion -- Private VPC routing --> API
+  Bastion -- "Private VPC routing" --> API
 
   %% Nodes are in private subnets and talk to control plane privately
   N1 --> API
