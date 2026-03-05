@@ -25,31 +25,63 @@ I built this because most EKS tutorials leave the API server wide open, skip log
 
 ## Architecture
 
-```
-                         ┌─────────────────────────────────────────────┐
-                         │                AWS Region                   │
-                         │                                             │
-  Internet ──> IGW ─────>│  Public Subnets (one per AZ)               │
-                         │  ┌───────────┐                              │
-             SSH:22      │  │  Bastion  │  AL2023, kubectl installed   │
-        (allowlisted) ──>│  └─────┬─────┘                              │
-                         │        │  private endpoint                   │
-                         │  ──────▼──────────────────────────────────   │
-                         │  Private Subnets (one per AZ)               │
-                         │                                             │
-                         │  ┌──────────────────────────────────┐       │
-                         │  │  EKS Control Plane (private API) │       │
-                         │  └──────────────────────────────────┘       │
-                         │                                             │
-                         │  ┌────────┐  ┌────────┐  ┌────────┐        │
-                         │  │ Node 1 │  │ Node 2 │  │ Node 3 │        │
-                         │  │ (AZ-1) │  │ (AZ-2) │  │ (AZ-3) │        │
-                         │  └────────┘  └────────┘  └────────┘        │
-                         │                                             │
-                         │  NAT GW x3 (one per AZ)                    │
-                         └─────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  %% Styling
+  classDef az fill:#eef7ff,stroke:#6aa7ff,stroke-width:1px;
+  classDef infra fill:#fff8e6,stroke:#f0b429,stroke-width:1px;
+  classDef node fill:#e9fce9,stroke:#2aa745,stroke-width:1px;
+  classDef cp fill:#fff0f0,stroke:#ff6b6b,stroke-width:1px;
+  classDef gateway fill:#f0f8ff,stroke:#00a3ff,stroke-width:1px;
 
-                         State: S3 bucket       Logs: CloudWatch
+  subgraph AWS_Region["AWS Region"]
+
+    IGW["Internet Gateway (IGW)"]:::gateway
+
+    subgraph Public_Subnets["Public Subnets (one per AZ)"]
+      Bastion["Bastion - Amazon Linux 2023
+      Public IP, SSH port 22
+      awscli + kubectl installed"]:::infra
+    end
+
+    subgraph Private_Subnets["Private Subnets (one per AZ)"]
+      subgraph EKS_CP["EKS Control Plane (Private API)"]
+        API["Private EKS API Endpoint
+        IRSA enabled, control-plane logs"]:::cp
+      end
+
+      N1["Worker Node (AZ-1)"]:::node
+      N2["Worker Node (AZ-2)"]:::node
+      N3["Worker Node (AZ-3)"]:::node
+    end
+
+    subgraph NATs["NAT Gateways (one per AZ)"]
+      NAT1["NAT GW - AZ-1"]:::gateway
+      NAT2["NAT GW - AZ-2"]:::gateway
+      NAT3["NAT GW - AZ-3"]:::gateway
+    end
+
+  end
+
+  %% Flows
+  Internet((Internet)):::gateway -->|"SSH port 22 - allowlisted"| IGW
+  IGW --> Bastion
+
+  %% Bastion accesses private EKS API inside VPC
+  Bastion -- "Private VPC routing" --> API
+
+  %% Nodes are in private subnets and talk to control plane privately
+  N1 --> API
+  N2 --> API
+  N3 --> API
+
+  %% Outbound internet for private subnets via NAT
+  N1 -. outbound updates .-> NAT1
+  N2 -. outbound updates .-> NAT2
+  N3 -. outbound updates .-> NAT3
+  NAT1 --> IGW
+  NAT2 --> IGW
+  NAT3 --> IGW
 ```
 
 The cluster API is completely private. You SSH into the bastion, and from there you run kubectl. That's the only way in.
